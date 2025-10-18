@@ -187,13 +187,21 @@ SUPABASE_KEY            # Supabase APIキー
 }
 ```
 
-## 🚀 本番環境
+## 🚀 環境情報
 
-### アクセス情報
+### 本番環境
 
 - **外部URL**: `https://api.hey-watch.me/janitor/`
 - **内部ポート**: `8030`
 - **コンテナ名**: `janitor-api`
+- **EC2サーバー**: `3.24.16.82`
+- **ECRリポジトリ**: `754724220380.dkr.ecr.ap-southeast-2.amazonaws.com/watchme-api-janitor`
+
+### テスト環境
+
+- **外部URL**: `https://api.hey-watch.me/janitor/`
+- **内部ポート**: `8021`
+- **コンテナ名**: `janitor-api-dev`
 - **EC2サーバー**: `3.24.16.82`
 - **ECRリポジトリ**: `754724220380.dkr.ecr.ap-southeast-2.amazonaws.com/watchme-api-janitor`
 
@@ -215,11 +223,13 @@ curl -X POST https://api.hey-watch.me/janitor/cleanup
 #### 内部からのアクセス
 
 ```bash
-# ローカルホスト経由
+# 本番環境（ポート8030）
 curl http://localhost:8030/health
-
-# 削除実行
 curl -X POST http://localhost:8030/cleanup
+
+# テスト環境（ポート8021）
+curl http://localhost:8021/health
+curl -X POST http://localhost:8021/cleanup
 ```
 
 ### 運用管理コマンド
@@ -236,16 +246,27 @@ ssh -i ~/watchme-key.pem ubuntu@3.24.16.82
 # コンテナ確認
 docker ps | grep janitor-api
 
-# ログ確認
+# ログ確認（本番）
 docker logs janitor-api --tail 100 -f
 
-# コンテナ再起動
+# ログ確認（テスト）
+docker logs janitor-api-dev --tail 100 -f
+
+# コンテナ再起動（本番）
 cd /home/ubuntu/janitor
 docker-compose -f docker-compose.prod.yml restart
 
-# コンテナ停止・削除・再起動
+# コンテナ再起動（テスト）
+cd /home/ubuntu/janitor
+docker-compose -f docker-compose.dev.yml restart
+
+# コンテナ停止・削除・再起動（本番）
 docker-compose -f docker-compose.prod.yml down
 docker-compose -f docker-compose.prod.yml up -d
+
+# コンテナ停止・削除・再起動（テスト）
+docker-compose -f docker-compose.dev.yml down
+docker-compose -f docker-compose.dev.yml up -d
 ```
 
 ### 重要な設定情報
