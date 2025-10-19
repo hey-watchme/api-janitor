@@ -4,6 +4,93 @@
 
 WatchMeプロジェクトにおける音声データのライフサイクル管理を担当します。分析が完了した音声ファイルをS3から自動削除し、ユーザーのプライバシーを最大限に保護します。
 
+---
+
+## 🚧 実装状況（2025-10-19）
+
+### ✅ 完了
+- [x] FastAPI実装（S3削除ロジック、Supabase連携）
+- [x] Docker & Docker Compose設定
+- [x] GitHub Actions CI/CD（ECR & EC2自動デプロイ）
+- [x] Nginx設定（`/janitor/` → `localhost:8021`）
+- [x] テスト環境デプロイ完了（ポート8021）
+- [x] GitHubリポジトリ: https://github.com/hey-watchme/api-janitor
+
+### 🔲 残タスク
+
+#### 1. Lambda関数のデプロイ（最優先）
+```bash
+cd /Users/kaya.matsumoto/projects/watchme/api/janitor/lambda
+
+# Lambda関数を作成（初回のみ）
+aws lambda create-function \
+  --function-name watchme-janitor-trigger \
+  --runtime python3.11 \
+  --role arn:aws:iam::754724220380:role/lambda-basic-execution \
+  --handler lambda_function.lambda_handler \
+  --timeout 60 \
+  --memory-size 256 \
+  --zip-file fileb://lambda_function.zip \
+  --region ap-southeast-2 \
+  --environment "Variables={JANITOR_API_URL=https://api.hey-watch.me/janitor/cleanup}"
+
+# デプロイパッケージのビルド
+./build.sh
+
+# Lambda関数の更新
+./deploy.sh
+```
+
+#### 2. EventBridge設定（6時間ごと実行）
+```bash
+cd /Users/kaya.matsumoto/projects/watchme/api/janitor/lambda
+
+# EventBridgeルールとターゲットを作成
+./create-eventbridge-rule.sh
+```
+
+#### 3. 動作テスト
+```bash
+# 3-1. APIの動作確認
+curl https://api.hey-watch.me/janitor/health
+curl https://api.hey-watch.me/janitor/stats
+
+# 3-2. 手動で削除処理をテスト（少量データで確認）
+curl -X POST https://api.hey-watch.me/janitor/cleanup
+
+# 3-3. Lambda関数の手動実行テスト
+aws lambda invoke \
+  --function-name watchme-janitor-trigger \
+  --region ap-southeast-2 \
+  response.json
+
+cat response.json | jq
+
+# 3-4. EventBridgeの動作確認（6時間後に自動実行されるか）
+# CloudWatch Logsでログを確認
+aws logs tail /aws/lambda/watchme-janitor-trigger --follow --region ap-southeast-2
+```
+
+#### 4. 本番環境へのデプロイ（オプション）
+現在はテスト環境（ポート8021）で稼働中。本番環境（ポート8030）への切り替えが必要な場合:
+```bash
+# EC2で実行
+ssh -i ~/watchme-key.pem ubuntu@3.24.16.82
+cd /home/ubuntu/janitor
+
+# テスト環境を停止
+docker-compose -f docker-compose.dev.yml down
+
+# 本番環境を起動
+./run-prod.sh
+
+# Nginx設定を本番ポートに変更
+sudo sed -i 's/localhost:8021/localhost:8030/g' /home/ubuntu/watchme-server-configs/sites-available/api.hey-watch.me
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+---
+
 ## 🎯 主な責務
 
 1. **処理済み音声ファイルの削除** - すべての分析が完了したファイルをS3から削除
