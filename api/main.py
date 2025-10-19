@@ -175,13 +175,14 @@ async def cleanup_audio_files():
 
         print(f"🧹 Janitor: 削除処理開始 - cutoff_time={cutoff_time.isoformat()}")
 
-        # 削除対象の検索
+        # 削除対象の検索（上限100件）
         response = supabase_client.table("audio_files") \
             .select("device_id,recorded_at,file_path,created_at") \
             .eq("transcriptions_status", "completed") \
             .eq("behavior_features_status", "completed") \
             .eq("emotion_features_status", "completed") \
             .lt("created_at", cutoff_time.isoformat()) \
+            .limit(100) \
             .execute()
 
         files_to_delete = response.data if response.data else []
@@ -200,13 +201,8 @@ async def cleanup_audio_files():
                 continue
 
             try:
-                # S3からファイル削除
-                s3_response = s3_client.delete_object(
-                    Bucket=S3_BUCKET_NAME,
-                    Key=file_path
-                )
-
                 # ファイルサイズを取得（削除前）
+                file_size = 0
                 try:
                     head_response = s3_client.head_object(
                         Bucket=S3_BUCKET_NAME,
@@ -214,12 +210,19 @@ async def cleanup_audio_files():
                     )
                     file_size = head_response.get('ContentLength', 0)
                     total_size += file_size
-                except:
-                    file_size = 0
+                except ClientError as e:
+                    if e.response.get('Error', {}).get('Code') != 'NoSuchKey':
+                        print(f"⚠️ ファイルサイズ取得失敗: {file_path}")
+
+                # S3からファイル削除
+                s3_response = s3_client.delete_object(
+                    Bucket=S3_BUCKET_NAME,
+                    Key=file_path
+                )
 
                 deleted_count += 1
                 deleted_files.append(file_path)
-                print(f"✅ 削除成功: {file_path}")
+                print(f"✅ 削除成功: {file_path} ({file_size} bytes)")
 
                 # Supabaseレコードも削除（オプション）
                 # もしくは deleted_at カラムを更新してソフトデリート

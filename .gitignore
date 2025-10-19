@@ -17,3 +17,7 @@ env/
 *.swp
 *.swo
 .DS_Store
+
+# Lambda build artifacts
+lambda/package/
+lambda/lambda_function.zip
