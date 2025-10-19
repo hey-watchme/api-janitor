@@ -224,17 +224,16 @@ async def cleanup_audio_files():
                 deleted_files.append(file_path)
                 print(f"✅ 削除成功: {file_path} ({file_size} bytes)")
 
-                # Supabaseレコードも削除（オプション）
-                # もしくは deleted_at カラムを更新してソフトデリート
+                # Supabaseレコードのfile_statusを'deleted'に更新
                 try:
                     supabase_client.table("audio_files") \
-                        .delete() \
+                        .update({"file_status": "deleted"}) \
                         .eq("device_id", device_id) \
                         .eq("recorded_at", recorded_at) \
                         .execute()
-                    print(f"📝 Supabaseレコード削除: device_id={device_id}, recorded_at={recorded_at}")
+                    print(f"📝 Supabaseレコード更新: device_id={device_id}, file_status='deleted'")
                 except Exception as db_error:
-                    print(f"⚠️ Supabaseレコード削除失敗: {str(db_error)}")
+                    print(f"⚠️ Supabaseレコード更新失敗: {str(db_error)}")
 
             except ClientError as e:
                 error_code = e.response.get('Error', {}).get('Code', 'Unknown')
@@ -243,10 +242,10 @@ async def cleanup_audio_files():
                     print(f"ℹ️ ファイル既に存在しない: {file_path}")
                     skipped_count += 1
 
-                    # Supabaseレコードも削除
+                    # Supabaseレコードのfile_statusを'deleted'に更新
                     try:
                         supabase_client.table("audio_files") \
-                            .delete() \
+                            .update({"file_status": "deleted"}) \
                             .eq("device_id", device_id) \
                             .eq("recorded_at", recorded_at) \
                             .execute()
