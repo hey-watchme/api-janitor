@@ -6,88 +6,33 @@ WatchMeプロジェクトにおける音声データのライフサイクル管�
 
 ---
 
-## 🚧 実装状況（2025-10-19）
+## ✅ 実装状況（最終更新: 2025-10-19）
 
-### ✅ 完了
+### 🎉 すべて完了 - 本番稼働中
+
 - [x] FastAPI実装（S3削除ロジック、Supabase連携）
 - [x] Docker & Docker Compose設定
 - [x] GitHub Actions CI/CD（ECR & EC2自動デプロイ）
-- [x] Nginx設定（`/janitor/` → `localhost:8021`）
-- [x] テスト環境デプロイ完了（ポート8021）
+- [x] Nginx設定（`/janitor/` → `localhost:8030`）
+- [x] 本番環境デプロイ完了（ポート8030）
+- [x] Lambda関数のデプロイ（`watchme-janitor-trigger`）
+- [x] EventBridgeルールの作成（6時間ごと自動実行）
+- [x] 本番環境での動作確認（S3削除・DB更新）
+- [x] `file_status`カラム実装（削除済みファイルをメタデータとして保持）
 - [x] GitHubリポジトリ: https://github.com/hey-watchme/api-janitor
 
-### 🔲 残タスク
+### 📊 動作実績（2025-10-19時点）
 
-#### 1. Lambda関数のデプロイ（最優先）
-```bash
-cd /Users/kaya.matsumoto/projects/watchme/api/janitor/lambda
+**Lambda実行履歴（過去24時間）:**
+- 2025-10-19 13:31 JST - 削除0件（対象なし）
+- 2025-10-19 15:00 JST - **削除100件成功**（8.3MB）
 
-# Lambda関数を作成（初回のみ）
-aws lambda create-function \
-  --function-name watchme-janitor-trigger \
-  --runtime python3.11 \
-  --role arn:aws:iam::754724220380:role/lambda-basic-execution \
-  --handler lambda_function.lambda_handler \
-  --timeout 60 \
-  --memory-size 256 \
-  --zip-file fileb://lambda_function.zip \
-  --region ap-southeast-2 \
-  --environment "Variables={JANITOR_API_URL=https://api.hey-watch.me/janitor/cleanup}"
+**データベース状態:**
+- `file_status = 'deleted'`: 108件
+- すべてのレコードで処理ステータス（文字起こし・行動分析・感情分析）が完了済み
 
-# デプロイパッケージのビルド
-./build.sh
-
-# Lambda関数の更新
-./deploy.sh
-```
-
-#### 2. EventBridge設定（6時間ごと実行）
-```bash
-cd /Users/kaya.matsumoto/projects/watchme/api/janitor/lambda
-
-# EventBridgeルールとターゲットを作成
-./create-eventbridge-rule.sh
-```
-
-#### 3. 動作テスト
-```bash
-# 3-1. APIの動作確認
-curl https://api.hey-watch.me/janitor/health
-curl https://api.hey-watch.me/janitor/stats
-
-# 3-2. 手動で削除処理をテスト（少量データで確認）
-curl -X POST https://api.hey-watch.me/janitor/cleanup
-
-# 3-3. Lambda関数の手動実行テスト
-aws lambda invoke \
-  --function-name watchme-janitor-trigger \
-  --region ap-southeast-2 \
-  response.json
-
-cat response.json | jq
-
-# 3-4. EventBridgeの動作確認（6時間後に自動実行されるか）
-# CloudWatch Logsでログを確認
-aws logs tail /aws/lambda/watchme-janitor-trigger --follow --region ap-southeast-2
-```
-
-#### 4. 本番環境へのデプロイ（オプション）
-現在はテスト環境（ポート8021）で稼働中。本番環境（ポート8030）への切り替えが必要な場合:
-```bash
-# EC2で実行
-ssh -i ~/watchme-key.pem ubuntu@3.24.16.82
-cd /home/ubuntu/janitor
-
-# テスト環境を停止
-docker-compose -f docker-compose.dev.yml down
-
-# 本番環境を起動
-./run-prod.sh
-
-# Nginx設定を本番ポートに変更
-sudo sed -i 's/localhost:8021/localhost:8030/g' /home/ubuntu/watchme-server-configs/sites-available/api.hey-watch.me
-sudo nginx -t && sudo systemctl reload nginx
-```
+**次回実行予定:**
+- 2025-10-19 21:00 JST（UTC 12:00）
 
 ---
 
@@ -118,7 +63,7 @@ Lambda: janitor-trigger
 API: janitor (FastAPI - EC2/Docker)
   ├─ Supabaseから削除対象を検索
   ├─ S3からファイル削除
-  └─ Supabaseレコード削除
+  └─ Supabaseレコードの`file_status`を'deleted'に更新
 ```
 
 ## 📁 ディレクトリ構成
@@ -129,11 +74,12 @@ janitor/
 │   ├── main.py
 │   └── requirements.txt
 │
-├── lambda/                 # Lambda Trigger（将来実装）
+├── lambda/                 # Lambda Trigger（本番稼働中）
 │   ├── lambda_function.py
 │   ├── requirements.txt
 │   ├── build.sh
-│   └── deploy.sh
+│   ├── deploy.sh
+│   └── create-eventbridge-rule.sh
 │
 ├── .github/
 │   └── workflows/
@@ -278,19 +224,25 @@ SUPABASE_KEY            # Supabase APIキー
 
 ### 本番環境
 
-- **外部URL**: `https://api.hey-watch.me/janitor/`
-- **内部ポート**: `8030`
-- **コンテナ名**: `janitor-api`
-- **EC2サーバー**: `3.24.16.82`
-- **ECRリポジトリ**: `754724220380.dkr.ecr.ap-southeast-2.amazonaws.com/watchme-api-janitor`
+| 項目 | 値 |
+|------|-----|
+| **外部URL** | https://api.hey-watch.me/janitor/ |
+| **内部ポート** | 8030 |
+| **コンテナ名** | janitor-api |
+| **IPアドレス** | 172.27.0.30（watchme-network） |
+| **EC2ディレクトリ** | /home/ubuntu/janitor-api |
+| **systemdサービス** | janitor-api |
+| **ECRリポジトリ** | watchme-api-janitor |
+| **デプロイ方式** | ECR |
 
-### テスト環境
+### 自動実行スケジュール（EventBridge + Lambda）
 
-- **外部URL**: `https://api.hey-watch.me/janitor/`
-- **内部ポート**: `8021`
-- **コンテナ名**: `janitor-api-dev`
-- **EC2サーバー**: `3.24.16.82`
-- **ECRリポジトリ**: `754724220380.dkr.ecr.ap-southeast-2.amazonaws.com/watchme-api-janitor`
+| 項目 | 値 |
+|------|-----|
+| **Lambda関数名** | watchme-janitor-trigger |
+| **実行間隔** | 6時間ごと |
+| **EventBridge Cron** | `0 */6 * * ? *` (UTC) |
+| **実行時刻（JST）** | 09:00, 15:00, 21:00, 03:00 |
 
 ### API利用方法
 
@@ -376,23 +328,55 @@ docker-compose -f docker-compose.dev.yml up -d
 **Cron式**: `0 */6 * * ? *`（UTC基準）
 
 **JST換算**:
-- 00:00 JST（15:00 UTC前日）
-- 06:00 JST（21:00 UTC前日）
-- 12:00 JST（03:00 UTC）
-- 18:00 JST（09:00 UTC）
+- 09:00 JST（00:00 UTC）
+- 15:00 JST（06:00 UTC）
+- 21:00 JST（12:00 UTC）
+- 03:00 JST（18:00 UTC）
 
-### Lambda関数（将来実装予定）
+### Lambda関数
 
-Lambda関数 (`watchme-janitor-trigger`) がこのAPIを呼び出す:
+Lambda関数 (`watchme-janitor-trigger`) がEventBridgeから6時間ごとに呼び出され、このAPIに削除リクエストを送信します。
 
+**関数名**: `watchme-janitor-trigger`
+**ランタイム**: Python 3.11
+**タイムアウト**: 60秒
+**メモリ**: 256MB
+**環境変数**: `JANITOR_API_URL=https://api.hey-watch.me/janitor/cleanup`
+
+**実装コード** (lambda/lambda_function.py):
 ```python
-import requests
+import json
+import urllib3
+
+http = urllib3.PoolManager()
+JANITOR_API_URL = os.environ.get("JANITOR_API_URL")
 
 def lambda_handler(event, context):
-    response = requests.post("https://api.hey-watch.me/janitor/cleanup")
-    result = response.json()
-    print(f"Cleanup result: {result}")
-    return result
+    print(f"🧹 Janitor Trigger: 削除処理開始")
+    response = http.request('POST', JANITOR_API_URL, timeout=60.0)
+    response_data = json.loads(response.data.decode('utf-8'))
+
+    if response.status == 200:
+        deleted_count = response_data.get('deleted_count', 0)
+        print(f"✅ 削除処理成功 - 削除: {deleted_count}件")
+        return {'statusCode': 200, 'body': json.dumps(response_data)}
+    else:
+        print(f"❌ API応答エラー: {response.status}")
+        return {'statusCode': response.status, 'body': json.dumps(response_data)}
+```
+
+### Lambda実行ログの確認
+
+```bash
+# 最新のログを確認
+aws logs tail /aws/lambda/watchme-janitor-trigger --follow --region ap-southeast-2
+
+# 過去のログを確認
+aws logs filter-log-events \
+  --log-group-name /aws/lambda/watchme-janitor-trigger \
+  --region ap-southeast-2 \
+  --start-time 1760760000000 \
+  --filter-pattern "削除"
 ```
 
 ## 🔐 プライバシー保護
@@ -418,8 +402,14 @@ def lambda_handler(event, context):
 ssh -i ~/watchme-key.pem ubuntu@3.24.16.82
 docker logs janitor-api --tail 100 -f
 
-# Lambda実行ログ（将来実装時）
+# Lambda実行ログ
 aws logs tail /aws/lambda/watchme-janitor-trigger --follow --region ap-southeast-2
+
+# Lambda関数の手動実行テスト
+aws lambda invoke \
+  --function-name watchme-janitor-trigger \
+  --region ap-southeast-2 \
+  response.json && cat response.json | jq
 ```
 
 ### ヘルスチェック
@@ -444,10 +434,30 @@ docker-compose -f docker-compose.prod.yml restart
 
 ### 削除処理が実行されない場合
 
-1. EventBridgeルールが有効化されているか確認
-2. Lambda関数の実行ログを確認
-3. APIのヘルスチェックを確認
-4. Supabaseの`audio_files`テーブルを確認
+```bash
+# 1. EventBridgeルールの状態確認
+aws events describe-rule --name watchme-janitor-schedule --region ap-southeast-2
+
+# 2. Lambda関数の最新ログ確認
+aws logs filter-log-events \
+  --log-group-name /aws/lambda/watchme-janitor-trigger \
+  --region ap-southeast-2 \
+  --start-time $(($(date +%s) * 1000 - 86400000)) \
+  --filter-pattern "削除"
+
+# 3. APIのヘルスチェック
+curl https://api.hey-watch.me/janitor/health
+curl https://api.hey-watch.me/janitor/stats
+
+# 4. 手動でLambda関数を実行してテスト
+aws lambda invoke \
+  --function-name watchme-janitor-trigger \
+  --region ap-southeast-2 \
+  response.json
+
+# 5. データベースの削除状態を確認（Supabaseダッシュボードで）
+# SELECT COUNT(*) FROM audio_files WHERE file_status = 'deleted';
+```
 
 ### S3削除エラーが発生する場合
 
